@@ -1,0 +1,204 @@
+-- Create Employee Table
+CREATE TABLE Employee (
+    EmployeeID NUMBER PRIMARY KEY,
+    FirstName VARCHAR2(50),
+    LastName VARCHAR2(50),
+    DateOfBirth DATE,
+    Position VARCHAR2(100),
+    Department VARCHAR2(100),
+    HireDate DATE,
+    Salary NUMBER DEFAULT 0 CHECK (Salary >= 0)
+);
+
+
+-- Create Payroll Table
+CREATE TABLE Payroll (
+    PayrollID NUMBER PRIMARY KEY,
+    EmployeeID NUMBER REFERENCES Employee(EmployeeID),
+    GrossSalary NUMBER,
+    TaxAmount NUMBER,
+    NetSalary NUMBER,
+    PayDate DATE
+);
+
+-- Create Attendance Table
+CREATE TABLE Attendance (
+    AttendanceID NUMBER PRIMARY KEY,
+    EmployeeID NUMBER REFERENCES Employee(EmployeeID),
+    AttendanceDate DATE, -- Changed column name from "Date" to "AttendanceDate"
+    TimeIn TIMESTAMP,
+    TimeOut TIMESTAMP,
+    Status VARCHAR2(20) DEFAULT 'Present' CHECK (Status IN ('Present', 'Absent', 'Late', 'Sick Leave', 'Vacation'))
+);
+
+
+
+-- Create Performance Table
+CREATE TABLE Performance (
+    PerformanceID NUMBER PRIMARY KEY,
+    EmployeeID NUMBER REFERENCES Employee(EmployeeID),
+    ReviewDate DATE,
+    Rating NUMBER CHECK (Rating >= 1 AND Rating <= 5),
+    Comments VARCHAR2(500)
+);
+
+-- Create Recruitment Table
+CREATE TABLE Recruitment (
+    JobID NUMBER PRIMARY KEY,
+    Position VARCHAR2(100),
+    Description VARCHAR2(500),
+    PostingDate DATE,
+    ClosingDate DATE
+);
+
+-- Create Candidates Table
+CREATE TABLE Candidates (
+    CandidateID NUMBER PRIMARY KEY,
+    JobID NUMBER REFERENCES Recruitment(JobID),
+    FirstName VARCHAR2(50),
+    LastName VARCHAR2(50),
+    ApplicationDate DATE,
+    Status VARCHAR2(20) DEFAULT 'Applied' CHECK (Status IN ('Applied', 'Interviewed', 'Hired')) 
+);
+
+-- Create Interviews Table
+CREATE TABLE Interviews (
+    InterviewID NUMBER PRIMARY KEY,
+    CandidateID NUMBER REFERENCES Candidates(CandidateID),
+    InterviewDate DATE,
+    Interviewer VARCHAR2(100),
+    Feedback VARCHAR2(500)
+);
+
+----------------------------------------------------------------------------
+-- Create EmployeePayrollView
+CREATE VIEW EmployeePayrollView AS
+SELECT e.EmployeeID, e.FirstName, e.LastName, e.Position, e.Department,
+       p.GrossSalary, p.TaxAmount, p.NetSalary, p.PayDate
+FROM Employee e
+JOIN Payroll p ON e.EmployeeID = p.EmployeeID;
+
+-- Create EmployeeAttendanceView
+CREATE VIEW EmployeeAttendanceView AS
+SELECT e.EmployeeID, e.FirstName, e.LastName, a.AttendanceDate, a.TimeIn, a.TimeOut, a.Status
+FROM Employee e
+JOIN Attendance a ON e.EmployeeID = a.EmployeeID;
+
+-- Create JobApplicationsView
+CREATE VIEW JobApplicationsView AS
+SELECT r.JobID, r.Position, c.CandidateID, c.FirstName, c.LastName, c.ApplicationDate, c.Status
+FROM Recruitment r
+JOIN Candidates c ON r.JobID = c.JobID;
+
+
+------------------------------------------------------------------------
+-- Create PL/SQL Procedure: CalculateNetSalary
+
+CREATE OR REPLACE PROCEDURE CalculateNetSalary (emp_id IN NUMBER) AS
+    gross_salary NUMBER;
+    tax_rate NUMBER := 0.25; -- Example tax rate
+    net_salary NUMBER;
+BEGIN
+    SELECT GrossSalary INTO gross_salary FROM Payroll WHERE EmployeeID = emp_id;
+    
+    -- Calculate net salary after tax deduction
+    net_salary := gross_salary * (1 - tax_rate);
+    
+    -- Update NetSalary in Payroll table
+    UPDATE Payroll SET NetSalary = net_salary WHERE EmployeeID = emp_id;
+    
+    COMMIT;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE('Employee not found.');
+END CalculateNetSalary;
+
+
+-------------
+CREATE SEQUENCE attendance_seq;
+
+-- Create PL/SQL Procedure: LogAttendance
+CREATE OR REPLACE PROCEDURE LogAttendance (emp_id IN NUMBER, att_date IN DATE, time_in IN TIMESTAMP, time_out IN TIMESTAMP, status IN VARCHAR2) AS
+BEGIN
+    INSERT INTO Attendance (AttendanceID, EmployeeID, AttendanceDate, TimeIn, TimeOut, Status)
+    VALUES (attendance_seq.NEXTVAL, emp_id, att_date, time_in, time_out, status);
+    
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error logging attendance.');
+END LogAttendance;
+
+
+
+------------
+CREATE SEQUENCE performance_seq;
+
+-- Create PL/SQL Procedure: EvaluatePerformance
+CREATE OR REPLACE PROCEDURE EvaluatePerformance (emp_id IN NUMBER, review_date IN DATE, rating IN NUMBER, comments IN VARCHAR2) AS
+BEGIN
+    INSERT INTO Performance (PerformanceID, EmployeeID, ReviewDate, Rating, Comments)
+    VALUES (performance_seq.NEXTVAL, emp_id, review_date, rating, comments);
+    
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error evaluating performance.');
+END EvaluatePerformance;
+
+
+
+
+-- Create Triggers
+
+-- Trigger to ensure no negative salary is inserted for employees
+CREATE OR REPLACE TRIGGER EmployeeInsertTrigger
+BEFORE INSERT ON Employee
+FOR EACH ROW
+BEGIN
+    IF :NEW.Salary < 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Salary cannot be negative.');
+    END IF;
+END;
+
+-- Trigger to validate salary changes to ensure net salary is never negative
+CREATE OR REPLACE TRIGGER PayrollUpdateTrigger
+BEFORE UPDATE ON Payroll
+FOR EACH ROW
+BEGIN
+    IF :NEW.NetSalary < 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Net Salary cannot be negative.');
+    END IF;
+END;
+
+-- Trigger to ensure no duplicate attendance records for the same employee on the same date
+CREATE OR REPLACE TRIGGER AttendanceInsertTrigger
+BEFORE INSERT ON Attendance
+FOR EACH ROW
+DECLARE
+    attendance_count NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO attendance_count
+    FROM Attendance
+    WHERE EmployeeID = :NEW.EmployeeID
+    AND AttendanceDate = :NEW.AttendanceDate;
+    
+    IF attendance_count > 0 THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Attendance already logged for this employee on this date.');
+    END IF;
+END;
+
+
+CREATE OR REPLACE VIEW EmployeeAttendanceView AS
+SELECT 
+    e.EmployeeID, 
+    e.FirstName, 
+    e.LastName, 
+    TO_CHAR(a.AttendanceDate, 'DD-MON-YYYY') AS AttendanceDate, 
+    TO_CHAR(a.TimeIn, 'DD-MON-YYYY HH:MI:SS AM') AS TimeIn, 
+    TO_CHAR(a.TimeOut, 'DD-MON-YYYY HH:MI:SS AM') AS TimeOut, 
+    a.Status
+FROM 
+    Employee e
+JOIN 
+    Attendance a ON e.EmployeeID = a.EmployeeID;
