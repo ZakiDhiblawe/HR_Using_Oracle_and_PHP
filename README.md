@@ -36,7 +36,7 @@ Before you begin, ensure you have the following installed on your system:
 1. Open your terminal or command prompt.
 2. Run the following commands to clone the repository:
    ```bash
-   git clone https://github.com/yourusername/hrms.git
+   git clone https://github.com/ZakiDhiblawe/HR_Using_Oracle_and_PHP
    cd hrms
    ```
 
