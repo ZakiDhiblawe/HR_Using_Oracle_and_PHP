@@ -69,7 +69,7 @@ Before you begin, ensure you have the following installed on your system:
 If you’re interested in improving this project, feel free to fork the repository and submit a pull request.
 
 ## License
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the **MIT**.
 
 ## Author
 **Zakaria Dahir Salad**  
